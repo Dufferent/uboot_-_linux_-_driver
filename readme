@@ -1,0 +1,515 @@
+//@Me:重新学习linux驱动
+//@->从标准字符设备驱动
+//@->到pinctrl && gpio子系统
+//@->深入学习linux驱动各种机制(锁，中断，定时器，信号量，poll，select...)
+//@->platform平台驱动深入学习
+//@->framebuffer驱动深入
+//@->v4l2 && video 设备驱动深入
+
+//@->uboot源码详解
+[1]:首先关注uboot源码下的configs目录
+    这里面放着uboot对各种芯片的配置文件
+    比如：我们想编译一个适合imx6ull的引导，我们只要执行
+    （先修改顶层Makefile，为ARCH && CROSS_COMPILE赋值）make xxx_defconfig
+    make -j4 -> 就能得到 u-boot.bin u-boot 等引导文件
+    按照对应第三方开发板厂商的方法烧入到sd卡或其他的存储介质上，以该存储介质启动（类似裸机驱动）
+[2]:再者关注根目录下的include/configs文件夹
+    这里面放着各类芯片对应的u-boot环境变量的配置文件
+    可以通过和类芯片的配置文件，直接设置环境变量
+[3]:根目录下的.config文件
+    放着你编译完u-boot后的所有编译选项的状态
+    要在这里修改你的编译选项并永久保存，就要让这个.config另存为configs/下的任意文件
+    （芯片所用串口名称也可在这里查询到）
+[4]:driver文件夹放着网络或者其他硬件的驱动程序
+[5]:net文件夹下面放置着跟网络有关的命令的源码，可以修改调整超时等待等协议细节。
+[6]:详细配置可以使用make menuconfig
+[7]:board/<factory>/ 下面放置着板级的 .c (源)文件 include/configs/ 下面放置着板级的 .h (头)文件
+    源文件里描述了裸机的uboot程序流程，以及设备初始化，当我们在uboot里要使用某项外设时要修改原文件的外设
+    初始化。而头文件里则是板子uboot的环境设置。
+
+
+//@->linux源码详解
+[1]:首先关注uboot源码下的arch/arm/configs目录
+    里面存放了linux内核支持的各种arm芯片的配置文件
+    如果要创建自己的配置文件也是在这里面新建defconfig文件（详细见嵌入式开发手册）
+[2]:其次看根目录下的driver文件夹
+    里面存放着内核里所有支持的外设驱动和硬件支持
+[3]:再者，根目录下的arch/arm/boot目录
+    里面存放着对应硬件平台的设备树源码文件和编译后产生的镜像文件
+    一般编写内核驱动，就是从这里修改底层配和驱动层
+[4]:内核详细配置可以用make menuconfig,想要保存设置同uboot一样
+    可以让.configs文件覆盖defconfig文件
+
+//@->设备树详解
+[1]:设备树文件有dtsi,dts,dtb三类
+    其中dtsi对标各种芯片，用来描述相应芯片的如核心，总线设备等cpu信息
+    而dts则对标各种开发板，描述的是开发板分别对应的外部设备和IO接口
+    dtb则是dts和dtsi这些设备树的源码文件编译链接后的二进制文件
+    编译工具为DTC(在scripts/dtc)
+    dtsi描述的是共性(主控芯片)dts描述个性(板级信息)
+[2]:设备树的语法和基本使用
+    [2-1]:文件引用--在dts,dtsi文件中可以引用*.dts,*.dtsi甚至*.h文件
+          方法:#include "../xxx.dts"
+    [2-2]:设备树范例:(只列取了部分)
+    <imx6ull.dtsi>
+    /*
+    * Copyright 2015 Freescale Semiconductor, Inc.
+    *
+    * This program is free software; you can redistribute it and/or modify
+    * it under the terms of the GNU General Public License version 2 as
+    * published by the Free Software Foundation.
+    */
+
+    #include <dt-bindings/clock/imx6ul-clock.h>
+    #include <dt-bindings/gpio/gpio.h>
+    #include <dt-bindings/interrupt-controller/arm-gic.h>
+    #include "imx6ul-pinfunc.h"
+    #include "skeleton.dtsi"
+
+    / {
+        aliases {
+            ethernet0 = &fec1;
+            gpio0 = &gpio1;
+            i2c3 = &i2c4;
+            mmc0 = &usdhc1;
+            serial0 = &uart1;
+            spi0 = &ecspi1;
+            usbphy0 = &usbphy1;
+        };
+
+        cpus {
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            cpu0: cpu@0 {
+                compatible = "arm,cortex-a7";
+                device_type = "cpu";
+                reg = <0>;
+                clock-latency = <61036>; /* two CLK32 periods */
+                operating-points = <
+                    /* kHz	uV */
+                    528000	1250000
+                    396000	1150000
+                    198000	1150000
+                >;
+                fsl,soc-operating-points = <
+                    /* KHz	uV */
+                    528000	1250000
+                    396000	1150000
+                    198000	1150000
+                >;
+                clocks = <&clks IMX6UL_CLK_ARM>,
+				 <&clks IMX6UL_CLK_PLL2_BUS>,
+				 <&clks IMX6UL_CLK_PLL2_PFD2>,
+				 <&clks IMX6UL_CA7_SECONDARY_SEL>,
+				 <&clks IMX6UL_CLK_STEP>,
+				 <&clks IMX6UL_CLK_PLL1_SW>,
+				 <&clks IMX6UL_CLK_PLL1_SYS>,
+				 <&clks IMX6UL_PLL1_BYPASS>,
+				 <&clks IMX6UL_CLK_PLL1>,
+				 <&clks IMX6UL_PLL1_BYPASS_SRC>,
+				 <&clks IMX6UL_CLK_OSC>;
+                clock-names = "arm", "pll2_bus",  "pll2_pfd2_396m",
+                        "secondary_sel", "step", "pll1_sw",
+                        "pll1_sys", "pll1_bypass", "pll1",
+                        "pll1_bypass_src", "osc";
+                arm-supply = <&reg_arm>;
+                soc-supply = <&reg_soc>;
+	        };
+        };
+        intc: interrupt-controller@00a01000 {
+		compatible = "arm,cortex-a7-gic";
+		#interrupt-cells = <3>;
+		interrupt-controller;
+		reg = <0x00a01000 0x1000>,
+		      <0x00a02000 0x1000>,
+		      <0x00a04000 0x2000>,
+		      <0x00a06000 0x2000>;
+	    };
+        ecspi1: ecspi@02008000 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "fsl,imx6ul-ecspi", "fsl,imx51-ecspi";
+			reg = <0x02008000 0x4000>;
+			interrupts = <GIC_SPI 31 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&clks IMX6UL_CLK_ECSPI1>,
+					 <&clks IMX6UL_CLK_ECSPI1>;
+			clock-names = "ipg", "per";
+			status = "disabled";
+		};
+        uart1: serial@02020000 {
+			compatible = "fsl,imx6ul-uart",
+						 "fsl,imx6q-uart";
+			reg = <0x02020000 0x4000>;
+			interrupts = <GIC_SPI 26 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&clks IMX6UL_CLK_UART1_IPG>,
+				     <&clks IMX6UL_CLK_UART1_SERIAL>;
+			clock-names = "ipg", "per";
+			status = "disabled";
+		};
+        gpt1: gpt@02098000 {
+			compatible = "fsl,imx6ul-gpt", "fsl,imx6sx-gpt";
+			reg = <0x02098000 0x4000>;
+			interrupts = <GIC_SPI 55 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&clks IMX6UL_CLK_GPT1_BUS>,
+					 <&clks IMX6UL_CLK_GPT1_SERIAL>;
+			clock-names = "ipg", "per";
+		};
+        gpio1: gpio@0209c000 {
+			compatible = "fsl,imx6ul-gpio", "fsl,imx35-gpio";
+			reg = <0x0209c000 0x4000>;
+			interrupts = <GIC_SPI 66 IRQ_TYPE_LEVEL_HIGH>,
+					     <GIC_SPI 67 IRQ_TYPE_LEVEL_HIGH>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
+		};
+        clks: ccm@020c4000 {
+			compatible = "fsl,imx6ul-ccm";
+			reg = <0x020c4000 0x4000>;
+			interrupts = <GIC_SPI 87 IRQ_TYPE_LEVEL_HIGH>,
+					     <GIC_SPI 88 IRQ_TYPE_LEVEL_HIGH>;
+			#clock-cells = <1>;
+			clocks = <&ckil>, <&osc>, <&ipp_di0>, <&ipp_di1>;
+			clock-names = "ckil", "osc", "ipp_di0", "ipp_di1";
+		};
+        usbphy1: usbphy@020c9000 {
+			compatible = "fsl,imx6ul-usbphy", "fsl,imx23-usbphy";
+			reg = <0x020c9000 0x1000>;
+			interrupts = <GIC_SPI 44 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&clks IMX6UL_CLK_USBPHY1>;
+			phy-3p0-supply = <&reg_3p0>;
+			fsl,anatop = <&anatop>;
+		};
+        epit1: epit@020d0000 {
+			reg = <0x020d0000 0x4000>;
+			interrupts = <GIC_SPI 56 IRQ_TYPE_LEVEL_HIGH>;
+		};
+        iomuxc: iomuxc@020e0000 {
+			compatible = "fsl,imx6ul-iomuxc";
+			reg = <0x020e0000 0x4000>;
+		};
+        pwm5: pwm@020f0000 {
+			compatible = "fsl,imx6ul-pwm", "fsl,imx27-pwm";
+			reg = <0x020f0000 0x4000>;
+			interrupts = <GIC_SPI 114 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&clks IMX6UL_CLK_DUMMY>,
+					 <&clks IMX6UL_CLK_DUMMY>;
+			clock-names = "ipg", "per";
+			#pwm-cells = <2>;
+		};
+        usdhc1: usdhc@02190000 {
+			compatible = "fsl,imx6ul-usdhc", "fsl,imx6sx-usdhc";
+			reg = <0x02190000 0x4000>;
+			interrupts = <GIC_SPI 22 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&clks IMX6UL_CLK_USDHC1>,
+					 <&clks IMX6UL_CLK_USDHC1>,
+					 <&clks IMX6UL_CLK_USDHC1>;
+			clock-names = "ipg", "ahb", "per";
+			bus-width = <4>;
+			status = "disabled";
+		};
+        i2c1: i2c@021a0000 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "fsl,imx6ul-i2c", "fsl,imx21-i2c";
+			reg = <0x021a0000 0x4000>;
+			interrupts = <GIC_SPI 36 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&clks IMX6UL_CLK_I2C1>;
+			status = "disabled";
+		};
+    };
+    [2-3]节点描述:
+        (1) "/" 代表根节点,dts引用dtsi造成两个 "/" 节点的情况，但两者最后会合并成一个
+        (2) node-name@unit-address [@前面是节点名称，后面是设备地址或寄存器首地址]
+            或者 label:node-name@unit-address [label 是标签，方便在其他地方引用该设备]
+            用 &label 来访问节点
+    [2-4]标准属性:
+        (1) compatible:兼容性属性，用来绑定设备和驱动是一个字符串列表
+            如："manufacturer,driver-name" manufct一般是厂家的名字，driver-name顾名思义对应驱动名称
+            例如：compatible = "fsl,imx6ul-evk-wm8960","fsl,imx-audio-wm8960"
+            一般我们写驱动文件会写一个OF匹配表，里面放了一些需要配对设备树的驱动名称，给设备树来用compatible来匹配对应驱动
+            一般都是平台驱动
+        (2) status:设备状态信息："okay"--表示设备可操作
+                               "disabled"--表示设备不可操作，但可变为可操作(热插拔)
+                               "fail"--不可操作
+                               "fail-sss"--同”fail“后面的”sss“是错误内容
+        (3) #address-cells 和 #size-cells:都为32为无符号整形[unsigned int]
+                                          #address-cells决定了 子节点 ”reg“ 中地址信息占用的字长
+                                          #size-cells   决定了 子节点 ”reg“ 中长度信息占用的字长
+                                          一般格式：
+                                          reg = <address1 length1 address2 length2 address3 length3……>
+                                          例如：
+                                          aips3: aips-bus@02200000 {
+                                            compatible = "fsl,aips-bus", "simple-bus";
+                                            #address-cells = <1>;
+                                            #size-cells = <1>;
+
+                                            dcp: dcp@02280000 {
+                                                compatible = "fsl,imx6sl-dcp";
+                                                reg = <0x02280000 0x4000>;
+                                            };
+                                          };
+                                          表示设备IO起始地址占用一个机器字长(这里是32bit)
+                                          长度也为一个机器字长(这里是32bit)
+                                          所以 ”reg = <0x02280000 0x4000>“
+                                          相当于设置dcp的起始地址为0x228000.长度为0x4000
+        (4) reg: reg 一般是 (address lenth)成对出现
+            reg = <address1 lenth1 address2 length2 ...>
+        (5) ranges: ranges属性值可以为空或者按照(child-bus-address,parent-bus-address,length)格式编写的数字
+                    矩阵，ranges 是一个地址映射/转换表，ranges 属性每个项目由子地址、父地址和地址空间长度
+                    这三部分组成：
+                    child-bus-address：子总线地址空间的物理地址，由父节点的#address-cells 确定此物理地址
+                    所占用的字长。
+                    parent-bus-address ：父总线地址空间的物理地址，同样由父节点的#address-cells 确定此物
+                    理地址所占用的字长。
+                    length ：子地址空间的长度，由父节点的#size-cells 确定此地址长度所占用的字长。
+                    如:soc {
+                         #address-cells = <1>;
+                         #size-cells = <1>;
+                         compatible = "simple-bus";
+                         interrupt-parent = <&gpc>;
+                         ranges;
+                        ......
+                         }
+                    ranges为空表示父子节点的寄存器起始地址完全相同
+                        soc {
+                             compatible = "simple-bus";
+                             #address-cells = <1>;
+                             #size-cells = <1>;
+                             ranges = <0x0 0xe0000000 0x00100000>;
+                            
+                             serial {
+                             device_type = "serial";
+                             compatible = "ns16550";
+                             reg = <0x4600 0x100>;
+                             clock-frequency = <0>;
+                             interrupts = <0xA 0x8>;
+                             interrupt-parent = <&ipic>;
+                             };
+                         };
+                    ranges说明了子节点地址偏移为0,父节点起始地址为0xe0000000
+                    又serial的reg = <0x4600 0x100>
+                    所以 作为soc 的子节点的 serial 的寄存器起始地址为 0xe0000000 + 0x4600 = 0xe0004600 
+                    寄存器列表长度为0x100
+        (6) name: name 属性值为字符串，name 属性用于记录节点名字，name 属性已经被弃用，不推荐使用
+                  name 属性，一些老的设备树文件可能会使用此属性。
+        (7) device_type: device_type 属性值为字符串，IEEE 1275 会用到此属性，用于描述设备的 FCode，但是设
+                         备树没有 FCode，所以此属性也被抛弃了。此属性只能用于 cpu 节点或者 memory 节点。
+    [2-5]根节点的compatible属性是Linux内核用来判断是否支持SOC的。
+         使用设备树之前设备匹配方法
+         在没有使用设备树以前，uboot 会向 Linux 内核传递一个叫做 machine id 的值，machine id
+         也就是设备 ID，告诉 Linux 内核自己是个什么设备，看看 Linux 内核是否支持。Linux 内核是
+         支持很多设备的，针对每一个设备(板子)，Linux内核都用MACHINE_START和MACHINE_END
+         来定义一个 machine_desc 结构体来描述这个设备，比如在文件 arch/arm/mach-imx/mach-
+         mx35_3ds.c 中有如下定义：
+         示例代码 43.3.4.2 MX35_3DS 设备
+          MACHINE_START(MX35_3DS, "Freescale MX35PDK")
+          /* Maintainer: Freescale Semiconductor, Inc */
+          .atag_offset = 0x100,
+          .map_io = mx35_map_io,
+          .init_early = imx35_init_early,
+          .init_irq = mx35_init_irq,
+          .init_time = mx35pdk_timer_init,
+          .init_machine = mx35_3ds_init,
+          .reserve = mx35_3ds_reserve,
+          .restart = mxc_restart,
+          MACHINE_END
+
+        #define MACHINE_START(_type,_name) \
+        static const struct machine_desc __mach_desc_##_type \
+        __used \
+        __attribute__((__section__(".arch.info.init"))) = { \
+        .nr = MACH_TYPE_##_type, \
+        .name = _name,
+        #define MACHINE_END \
+        };
+
+        在 include/generated/mach-types.h 中定义了大量的MACHINE ID 用来匹配UBOOT传递给内核的参数
+        使用设备树之后,统一在 arch/arm/mach_xxx 文件夹下的源码文件中 分别存放着各自SOC的设备匹配ID
+        匹配方式和没有设备树的时候大同小异,例如：
+        static const char * const v2m_dt_match[] __initconst = {
+                                                                    "arm,vexpress",
+                                                                    NULL,
+                                                                };
+
+                                                                DT_MACHINE_START(VEXPRESS_DT, "ARM-Versatile Express")
+                                                                    .dt_compat	= v2m_dt_match,
+                                                                    .l2c_aux_val	= 0x00400000,
+                                                                    .l2c_aux_mask	= 0xfe0fffff,
+                                                                    .smp		= smp_ops(vexpress_smp_dt_ops),
+                                                                    .smp_init	= smp_init_ops(vexpress_smp_init_ops),
+                                                                MACHINE_END
+        这是 vexpress soc 的匹配文件,上面的 v2m_dt_match就是匹配的 compatible 用来和 "/" 下的 compatible 匹配
+        下面是匹配宏 用来做具体的匹配事宜。
+        内核启动先调用 start_kernel 函数 ,在这个函数里 调用了 setup_arch 函数 而这个函数 又调用 setup_machine_fdt 获取uboot传递给
+        内核的 MACHINEID 和 设备树 根节点 下的 compatible的键值对 一一匹配。
+    [2-6]修改节点
+            例如，我们要添加一个I2C设备比如6周传感器，找寻对应的板级dts我们发现 i2c 节点在对标SOCD的 dtsi文件里，最简单不过是在dtsi里添加新的I2C子
+            节点，但是所有使用这颗SOC的板子都受到影响，所以我们将新的I2C设备写到对应的板级文件 *.dts 中，用 &i2c的方式引用I2C父节点，添加我们的子节
+            节点。
+            EG：
+            *.dtsi ->
+            v2m_i2c_dvi: i2c@16000 {
+                        compatible = "arm,versatile-i2c";
+                        reg = <0x16000 0x1000>;
+
+                        #address-cells = <1>;
+                        #size-cells = <0>;
+
+                        dvi-transmitter@39 {
+                            compatible = "sil,sii9022-tpi", "sil,sii9022";
+                            reg = <0x39>;
+                        };
+
+                        dvi-transmitter@60 {
+                            compatible = "sil,sii9022-cpi", "sil,sii9022";
+                            reg = <0x60>;
+                        };
+
+                        /* 最简单的方式 */
+                        newdevice@1e {
+                            compatible = "factory,devicename","xxx,xxxx";
+                            reg = <0x1e>
+                        };
+                    };
+            *.dts ->
+            /  {
+                ...
+                ...
+                &v2m_i2c_dvi {
+                    /* 要追加或者修改的内容 */
+                };
+            };
+            (新属性 clock_frequence -> 设备工作频率)
+    [2-7]设备树在Linux系统中的体现
+         在 /proc/device-tree 下存放有根据对应的以各个节点名称命名的文件
+         #address-cells”、“#size-cells”、“compatible”、“model”和“name”这 5 个文件
+         是对应设备树的 "/" 节点的体现。换句话说，例如，我们使用vexpress-v2p-ca9这块开发板
+         对标板子的设备树文件xxx.dts里的 "/" 节点下所有的信息都在这个文件夹下体现了。
+         
+    [2-8]特殊节点 -> aliases 和 chosen
+         (1) aliases 节点
+             aliases {
+                    can0 = &flexcan1;
+                    can1 = &flexcan2;
+                    ethernet0 = &fec1;
+                    ethernet1 = &fec2;
+                    gpio0 = &gpio1;
+                    gpio1 = &gpio2;
+                    ......
+                    spi0 = &ecspi1;
+                    spi1 = &ecspi2;
+                    spi2 = &ecspi3;
+                    spi3 = &ecspi4;
+                    usbphy0 = &usbphy1;
+                    usbphy1 = &usbphy2;
+                    };
+            其实就是 ”别名“ 节点，上面说了，对标板子的设备树是我们要修改的主要对象，而对标OC的设备树，我们一般是
+            不去改动的，这就要用到 "nameelse = &node-name" 来引用OC设备树的节点，做修改或者增加节点等操作。
+            这里其实就是集体给要引用的节点取号名字，方便引用。
+         (2) chosen 节点
+            chosen 并不是一个真实的设备，chosen 节点主要是为了 uboot 向 Linux 内核传递数据，重
+            点是 bootargs 参数。一般.dts 文件中 chosen 节点通常为空或者内容很少，imx6ull-alientek-
+            emmc.dts 中 chosen 节点内容如下所示：
+            chosen {
+                    stdout-path = &uart1;
+                    };
+                    从示例代码 43.6.2.1 中可以看出，chosen 节点仅仅设置了属性“stdout-path”，表示标准输
+                    出使用 uart1。但是当我们进入到/proc/device-tree/chosen 目录里面，会发现多了 bootargs 这个
+                    属性。
+            这个属性和我们在uboot中设置的bootargs属性完全一致，这是因为这个节点属性是通过uboot给内核的chosen节点
+            增加的。在uboot源码中的 common/fdt_support.c 这个文件中有 fdt_chosen 函数，用来传递bootargs给设备
+            树。
+        (3) bootz 命令流程
+                   do_bootz -> do_bootm_states -> boot_selected_os -|
+                                                                    |
+            | boot_prep_linux <- boot_fn= boot_fn=do_bootm_linux <-  (进入 linux 内核了) 
+            |
+            -> image_setup_linux -> mage_setup_libfdt -> fdt_chosen -> 设置节点属性bootargs
+            当我们在uboot中执行 bootz address1 – address2 的时候，uboot 中的 do_bootz 函数就执行
+            然后按上面的流程一直到最后。
+    [2-9]内核如何解析dtb
+         启动内核时最开始执行了 start_kernel 函数，通过复杂的调用，最后解析内核的函数为 unflatten_dt_node
+    [2-10]修改设备树的绑定文档(help)
+          /Documentation/devicetree/bindings
+    [2-11]设备树常用OF函数 ->  OF 函数原型都定义在 include/linux/of.h
+        (1) 查找节点的OF函数: struct device_node 结构体被用来描述节点
+            -- 函数<1> struct device_node *of_find_node_by_name(struct device_node *from,const char *name);
+            @parm:: device_node 用来存储找到设备树中的的节点，name 用来按照节点的name属性查找。
+            -- 函数<2> struct device_node *of_find_node_by_type(struct device_node *from, const char *type)
+            @parm:: device_node 用来存储找到设备树中的的节点，type为节点的device_type
+            -- 函数<3> struct device_node *of_find_compatible_node(  struct device_node *from,
+                                                                    const char *type,
+                                                                    const char *compatible)
+            @parm:: device_node 用来存储找到设备树中的的节点,type为节点的device_type,compatible为节点的兼容性
+            -- 函数<4> struct device_node *of_find_matching_node_and_match(  struct device_node *from,
+                                                                            const struct of_device_id *matches,
+                                                                            const struct of_device_id **match)
+            @parm:: device_node 用来存储找到设备树中的的节点,matches为匹配表(就是限制查找范围在匹配表里)，match为要匹配的键值
+            -- 函数<5> inline struct device_node *of_find_node_by_path(const char *path)
+            @parm:: 查找成功返回节点结构体的地址,path：带有全路径的节点名，可以使用节点的别名，比如“/backlight”就是 backlight 这个
+            节点的全路径。
+        (2) 查找父子节点的OF函数: 同样 struct device_node 结构体被用来描述节点
+            -- 函数<1> struct device_node *of_get_parent(const struct device_node *node)
+            @parm:: 返回父节点地址，node是当前节点的地址
+            -- 函数<2> struct device_node *of_get_next_child(const struct device_node *node,
+                                                            struct device_node *prev)
+            @parm:: 返回下一个子节点，node是当前相对的的父节点，prev是子节点的偏置量(可以为NULL表示从第一个节点开始)
+        (3) 提取属性值的OF函数: struct property 结构体用来描述节点的属性,同样定义在include/linux/of.h
+            -- 函数<1> property *of_find_property(  const struct device_node *np,
+                                                    const char *name,
+                                                    int *lenp)   
+            @parm:: np是要获取属性的节点指针，name是要获取的节点属性名称，lenp是要获取属性的字节数,返回描述属性的结构体
+            -- 函数<2> int of_property_count_elems_of_size(const struct device_node *np,
+                                                          const char *propname,                                                   
+                                                          int elem_size)
+            @parm:: np为要查找的节点的指针，propname为需要统计数量的元素的名称，elem_size为元素长度,返回查找属性的元素的数量
+            -- 函数<3> int of_property_read_u32_index(const struct device_node *np,
+                                                     const char *propname,
+                                                     u32 index,
+                                                     u32 *out_value)
+            @parm:: np为要查找的节点的指针，propname为需要统计数量的元素的名称，index为要读取的(u32)值的索引，out_value得到对应的(u32)
+            值,返回0成功，负值就失败
+            同理：   of_property_read_u8_array  函数
+                    of_property_read_u16_array 函数
+                    of_property_read_u32_array 函数
+                    of_property_read_u64_array 函数
+            用来读取一个或多个（一串）键值，读取的个数用传入参数 size_t sz 决定
+                    of_property_read_u8  函数
+                    of_property_read_u16 函数
+                    of_property_read_u32 函数
+                    of_property_read_u64 函数
+            用来读单个的整形值。
+            函数<4> int of_property_read_string( struct device_node *np,
+                                                const char *propname,
+                                                const char **out_string)
+            @parm:: np为要查找的节点的指针，propname为要获取节点属性的名称，out_string 为得到的属性的字符串
+            函数<5> int of_n_addr_cells(struct device_node *np)
+            @parm:: np为要查找的节点的指针,返回 #address-cells 属性的值
+            函数<6> int of_n_size_cells(struct device_node *np)
+            @parm:: np为要查找的节点的指针,返回 #size-cells 属性的值\
+        (4) 其他常用的 OF 函数: 
+            函数<1> int of_device_is_compatible(const struct device_node *device,const char *compat)
+            @parm:: device为要查找的节点的指针,compat是要确认的该节点的compatible属性值,返回0表示包含，负值就不包含
+            函数<2> const __be32 *of_get_address(struct device_node *dev,
+                                                int index,
+                                                u64 *size,
+                                                unsigned int *flags)
+            @parm:: dev为要查找的节点的指针,index为要获取的属性键值对的索引，要获取的地址长度,flags：参数，
+            比如 IORESOURCE_IO、IORESOURCE_MEM 等。返回值：读取到的地址数据首地址，为 NULL 的话表示读取失败。
+            函数<3> u64 of_translate_address(struct device_node *dev,
+                                            const __be32 *in_addr)
+            @parm:: dev为要查找的节点的指针,in_addr为要转换的地址,返回 OF_BAD_ADDR 表示转换失败。
+            函数<4> int of_address_to_resource(struct device_node *dev,
+                                              int index,
+                                              struct resource *r)
+            [struct resource 用来描述一段连续的内存空间，resource 结构体定义在文件 include/linux/ioport.h 中]
+            @parm::  dev为要查找的节点的指针,index为查找的属性的索引，r 为得到的内存资源结构体指针。
+            函数<5> void __iomem *of_iomap(struct device_node *np,int index)
+            @parm:: np为要查找的节点的指针,index为属性的索引值,返回IO的重映射地址。
+
+
+          
+
