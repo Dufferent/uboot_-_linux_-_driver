@@ -1,0 +1,37 @@
+//@Me:重新学习linux驱动
+//@->从标准字符设备驱动
+//@->到pinctrl && gpio子系统
+//@->深入学习linux驱动各种机制(锁，中断，定时器，信号量，poll，select...)
+//@->platform平台驱动深入学习
+//@->framebuffer驱动深入
+//@->v4l2 && video 设备驱动深入
+
+//@->uboot源码详解
+[1]:首先关注uboot源码下的configs目录
+    这里面放着uboot对各种芯片的配置文件
+    比如：我们想编译一个适合imx6ull的引导，我们只要执行
+    （先修改顶层Makefile，为ARCH && CROSS_COMPILE赋值）make xxx_defconfig
+    make -j4 -> 就能得到 u-boot.bin u-boot 等引导文件
+    按照对应第三方开发板厂商的方法烧入到sd卡或其他的存储介质上，以该存储介质启动（类似裸机驱动）
+[2]:再者关注根目录下的include/configs文件夹
+    这里面放着各类芯片对应的u-boot环境变量的配置文件
+    可以通过和类芯片的配置文件，直接设置环境变量
+[3]:根目录下的.config文件
+    放着你编译完u-boot后的所有编译选项的状态
+    要在这里修改你的编译选项并永久保存，就要让这个.config另存为configs/下的任意文件
+    （芯片所用串口名称也可在这里查询到）
+[4]:其他的类似于net,driver等文件夹放着网络或者其他硬件的驱动程序
+[5]:详细配置可以使用make menuconfig
+
+//@->linux源码详解
+[1]:首先关注uboot源码下的arch/arm/configs目录
+    里面存放了linux内核支持的各种arm芯片的配置文件
+    如果要创建自己的配置文件也是在这里面新建defconfig文件（详细见嵌入式开发手册）
+[2]:其次看根目录下的driver文件夹
+    里面存放着内核里所有支持的外设驱动和硬件支持
+[3]:再者，根目录下的arch/arm/boot目录
+    里面存放着对应硬件平台的设备树源码文件和编译后产生的镜像文件
+    一般编写内核驱动，就是从这里修改底层配和驱动层
+[4]:内核详细配置可以用make menuconfig,想要保存设置同uboot一样
+    可以让.configs文件覆盖defconfig文件
+    

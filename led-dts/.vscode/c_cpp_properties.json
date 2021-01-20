@@ -1,0 +1,19 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/home/xny/Linux-Core/linux-imx-rel_imx_4.1.15_2.1.0_ga/include",    //驱动编写需要linux下的常用头文件
+                "/home/xny/Linux-Core/linux-imx-rel_imx_4.1.15_2.1.0_ga/arch/arm/include", //需要指定架构下的常用头文件
+                "/home/xny/Linux-Core/linux-imx-rel_imx_4.1.15_2.1.0_ga/arch/arm/include/generated" //需要指定架构下的头文件里的派生文件
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "gnu11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "gcc-x64"
+        }
+    ],
+    "version": 4
+}

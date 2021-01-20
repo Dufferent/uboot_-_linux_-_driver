@@ -13,6 +13,11 @@
 #include "asm/io.h"
 #include "asm/gpio.h"
 #include "asm/mman.h"
+/* OF About */
+#include "linux/of.h"
+#include "linux/of_gpio.h"
+/* pinctrl & gpio-system */
+
 
 /*
  * 日期：[2021.1.20] 
@@ -21,38 +26,32 @@
  * 功能：[1.实现了linux下新字符设备驱动]
  *      [2.完成用户态和内核态之间的数据交换]
  *      [3.熟练掌握printk的工作原理和使用方式]
- *      [4.The end!]
+ *      [4.掌握设备树的基本使用]
+ *      [5.The end!]
  */
+
+//设备
+static struct{
+    dev_t devid;
+    struct class *devcl;
+    struct device *devdv;
+    struct device_node *node;
+    int gpios;
+}led;
 
 
 #define DEVNUMS 1
-#define DEVNAME "leddev"
+#define DEVNAME "ledpin"
 #define DEVMAJOR   200
 #define DEVMINOR   0
 
-#define CCM_CCGR1 (0x020C406C)
-#define MUX_GPIO1 (0x020E0068)
-#define PAD_GPIO1 (0x020E02F4)
-#define GPIO1_DR  (0X0209C000)
-#define GPIO1_DIR (0X0209C004)
-
-static void *__iomem VIR_CCM_CCGR1;
-static void *__iomem VIR_MUX_GPIO1;
-static void *__iomem VIR_PAD_GPIO1;
-static void *__iomem VIR_GPIO1_DR;
-static void *__iomem VIR_GPIO1_DIR;
-
 void light(void)
 {
-    unsigned int val = readl(VIR_GPIO1_DR);
-    val &= (~(0x1<<3));
-    writel(val,VIR_GPIO1_DR);
+    gpio_set_value(led.gpios,0);
 }
 void shutdown(void)
 {
-    unsigned int val = readl(VIR_GPIO1_DR);
-    val |= (0x1<<3);
-    writel(val,VIR_GPIO1_DR);
+    gpio_set_value(led.gpios,1);
 }
 
 static int led_open(struct inode *obj, struct file *fp)
@@ -101,34 +100,34 @@ static struct file_operations ledops = {
     .release = led_close,
 };
 
-//设备
-static struct{
-    dev_t devid;
-    struct class *devcl;
-    struct device *devdv;
-}led;
-
 static int __init led_init(void)
 {
     /* io 初始化 */
-    unsigned int val = 0;
     int ret;
-    VIR_CCM_CCGR1 = ioremap(CCM_CCGR1,4);
-    VIR_MUX_GPIO1 = ioremap(MUX_GPIO1,4);
-    VIR_PAD_GPIO1 = ioremap(PAD_GPIO1,4);
-    VIR_GPIO1_DR  = ioremap(GPIO1_DR ,4);
-    VIR_GPIO1_DIR = ioremap(GPIO1_DIR,4);
-    val = readl(VIR_CCM_CCGR1);
-    val |= (0x3<<26);
-    writel(val,VIR_CCM_CCGR1);
-    writel(0x5,VIR_MUX_GPIO1);
-    writel(0x10B0,VIR_PAD_GPIO1);
-    val = readl(VIR_GPIO1_DIR);
-    val |= (0x1<<3);
-    writel(val,VIR_GPIO1_DIR);
-    val = readl(VIR_GPIO1_DR);
-    val &= (~(0x1<<3));
-    writel(val,VIR_GPIO1_DR);//亮灯
+    /* find node */
+    led.node = of_find_node_by_path("/led");
+    if(led.node == NULL)
+    {
+        printk(KERN_EMERG"can't find node!\r\n");
+        return -1;
+    }
+    /* pick gpios */
+    led.gpios = of_get_named_gpio(led.node,"led-gpios",0);
+    if(led.gpios < 0)
+    {
+        printk(KERN_EMERG"can't pick gpio nums!\r\n");
+        return -1;
+    }
+    
+    ret = gpio_request(led.gpios,"led");
+    if(ret < 0)
+    {
+        printk(KERN_EMERG"request gpio failed!\r\n");
+        return -1;       
+    }
+    
+    gpio_direction_output(led.gpios, 0);
+
     /* 设备初始化 */
     ret = register_chrdev(DEVMAJOR,DEVNAME,&ledops);
     if(ret < 0)
@@ -145,11 +144,8 @@ static int __init led_init(void)
 
 static void __exit led_exit(void)
 {
-    iounmap(VIR_CCM_CCGR1);
-    iounmap(VIR_MUX_GPIO1);
-    iounmap(VIR_PAD_GPIO1);
-    iounmap(VIR_GPIO1_DR);
-    iounmap(VIR_GPIO1_DIR);
+    /* IO del */
+    gpio_free(led.gpios);
     device_destroy(led.devcl,led.devid);
     class_destroy(led.devcl);
     unregister_chrdev(DEVMAJOR,DEVNAME);

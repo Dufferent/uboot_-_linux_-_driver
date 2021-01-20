@@ -13,6 +13,9 @@
 #include "asm/io.h"
 #include "asm/gpio.h"
 #include "asm/mman.h"
+/* OF About */
+#include "linux/of.h"
+#include "linux/of_gpio.h"
 
 /*
  * 日期：[2021.1.20] 
@@ -21,20 +24,15 @@
  * 功能：[1.实现了linux下新字符设备驱动]
  *      [2.完成用户态和内核态之间的数据交换]
  *      [3.熟练掌握printk的工作原理和使用方式]
- *      [4.The end!]
+ *      [4.掌握设备树的基本使用]
+ *      [5.The end!]
  */
 
 
 #define DEVNUMS 1
-#define DEVNAME "leddev"
+#define DEVNAME "leddts"
 #define DEVMAJOR   200
 #define DEVMINOR   0
-
-#define CCM_CCGR1 (0x020C406C)
-#define MUX_GPIO1 (0x020E0068)
-#define PAD_GPIO1 (0x020E02F4)
-#define GPIO1_DR  (0X0209C000)
-#define GPIO1_DIR (0X0209C004)
 
 static void *__iomem VIR_CCM_CCGR1;
 static void *__iomem VIR_MUX_GPIO1;
@@ -106,18 +104,31 @@ static struct{
     dev_t devid;
     struct class *devcl;
     struct device *devdv;
+    struct device_node *node;
 }led;
 
 static int __init led_init(void)
 {
     /* io 初始化 */
     unsigned int val = 0;
-    int ret;
-    VIR_CCM_CCGR1 = ioremap(CCM_CCGR1,4);
-    VIR_MUX_GPIO1 = ioremap(MUX_GPIO1,4);
-    VIR_PAD_GPIO1 = ioremap(PAD_GPIO1,4);
-    VIR_GPIO1_DR  = ioremap(GPIO1_DR ,4);
-    VIR_GPIO1_DIR = ioremap(GPIO1_DIR,4);
+    int ret,i;
+    int reg[10] = {0};
+    /* find node */
+    led.node = of_find_node_by_path("/led");
+    if(led.node == NULL)
+    {
+        printk(KERN_EMERG"can't find node!\r\n");
+        return -1;
+    }
+    /* pick reg */
+    for(i=0;i<10;i++)
+        of_property_read_u32_index(led.node,"reg",i,&reg[i]);
+
+    VIR_CCM_CCGR1 = ioremap(reg[0],reg[1]);
+    VIR_MUX_GPIO1 = ioremap(reg[2],reg[3]);
+    VIR_PAD_GPIO1 = ioremap(reg[4],reg[5]);
+    VIR_GPIO1_DR  = ioremap(reg[6],reg[7]);
+    VIR_GPIO1_DIR = ioremap(reg[8],reg[9]);
     val = readl(VIR_CCM_CCGR1);
     val |= (0x3<<26);
     writel(val,VIR_CCM_CCGR1);
@@ -145,6 +156,7 @@ static int __init led_init(void)
 
 static void __exit led_exit(void)
 {
+    /* IO del */
     iounmap(VIR_CCM_CCGR1);
     iounmap(VIR_MUX_GPIO1);
     iounmap(VIR_PAD_GPIO1);

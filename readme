@@ -509,7 +509,71 @@
             @parm::  dev为要查找的节点的指针,index为查找的属性的索引，r 为得到的内存资源结构体指针。
             函数<5> void __iomem *of_iomap(struct device_node *np,int index)
             @parm:: np为要查找的节点的指针,index为属性的索引值,返回IO的重映射地址。
-
-
+   [2-12]pinctrl && gpio-system
+	 	led {
+			compatible = "fsl,led";
+			pinctrl-names = "default";
+			pinctrl-0 = <&pinctrl_led>;
+			led-gpios = <&gpio1 3 GPIO_ACTIVE_LOW>;
+			status = "okay";
+		};
+		&iomuxc {
+			imx6ul-evk {
+			/* ... */
+			pinctrl_led: ledpin {
+				fsl,pins = <
+					MX6UL_PAD_GPIO1_IO03__GPIO1_IO03 0x10B0
+				>;
+			};
+		    };
+		};
+	1、gpio_request 函数
+		gpio_request 函数用于申请一个 GPIO 管脚,在使用一个 GPIO 之前一定要使用 gpio_request
+		进行申请,函数原型如下:
+		int gpio_request(unsigned gpio, const char *label)
+		函数参数和返回值含义如下:
+		gpio:要申请的 gpio 标号,使用 of_get_named_gpio 函数从设备树获取指定 GPIO 属性信
+		息,此函数会返回这个 GPIO 的标号。
+		label:给 gpio 设置个名字。
+		返回值:0,申请成功;其他值,申请失败。
+	2、gpio_free 函数
+		如果不使用某个 GPIO 了,那么就可以调用 gpio_free 函数进行释放。函数原型如下:
+		void gpio_free(unsigned gpio)
+		函数参数和返回值含义如下:
+		gpio:要释放的 gpio 标号。
+		返回值:无。
+	3、gpio_direction_input 函数
+		此函数用于设置某个 GPIO 为输入,函数原型如下所示:
+		int gpio_direction_input(unsigned gpio)
+		函数参数和返回值含义如下:
+		gpio:要设置为输入的 GPIO 标号。
+		返回值:0,设置成功;负值,设置失败。
+	4、gpio_direction_output 函数
+		此函数用于设置某个 GPIO 为输出,并且设置默认输出值,函数原型如下:
+		int gpio_direction_output(unsigned gpio, int value)
+		函数参数和返回值含义如下:
+		gpio:要设置为输出的 GPIO 标号。
+		value:GPIO 默认输出值。
+		返回值:0,设置成功;负值,设置失败。
+	5、gpio_get_value 函数
+		此函数用于获取某个 GPIO 的值(0 或 1),此函数是个宏,定义所示:
+		#define gpio_get_value __gpio_get_value
+		int __gpio_get_value(unsigned gpio)
+		函数参数和返回值含义如下:
+		gpio:要获取的 GPIO 标号。
+		返回值:非负值,得到的 GPIO 值;负值,获取失败。
+	6、gpio_set_value 函数
+		此函数用于设置某个 GPIO 的值,此函数是个宏,定义如下
+		#define gpio_set_value __gpio_set_value
+		void __gpio_set_value(unsigned gpio, int value)
+		函数参数和返回值含义如下:
+		gpio:要设置的 GPIO 标号。
+		value:要设置的值。
+		返回值:无
+		关于 gpio 子系统常用的 API 函数就讲这些,这些是我们用的最多的
+	(pinctrl属性用来配置IO的PAD寄存器的电器属性，供GPIO-SYSTEM使用，对用户来说只需要配置，是完全透明的)
+	*(注意：由于开发版的伴生类型多种多样，有些官方BSP的IO的MUX和PAD属性也可能重复，当驱动正确加载，实验无现象时可以仔细查找)
+    [2-13]定时器和外部中断
+	
           
 
