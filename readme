@@ -574,6 +574,23 @@
 	(pinctrl属性用来配置IO的PAD寄存器的电器属性，供GPIO-SYSTEM使用，对用户来说只需要配置，是完全透明的)
 	*(注意：由于开发版的伴生类型多种多样，有些官方BSP的IO的MUX和PAD属性也可能重复，当驱动正确加载，实验无现象时可以仔细查找)
     [2-13]定时器和外部中断
-	
+	1.配置设备树中的节点的中断信息
+	key {
+			compatible = "fsl,key";
+			pinctrl-names = "default";
+			pinctrl-0 = <&pinctrl_key>;
+			key-gpios = <&gpio1 18 GPIO_ACTIVE_LOW>;
+			/* irq info */
+			interrupt-parent = <&gpio1>;
+			interrupts = <18 IRQ_TYPE_EDGE_RISING>;
+		};
+	};
+	pinctrl_key: keypin {
+			fsl,pins = <
+				MX6UL_PAD_UART1_CTS_B__GPIO1_IO18 0xF080
+			>;
+		};
+	2.of_irq_get(); irq_request(); irq_free(); irq_enable(); irq_disable();
+	3.
           
 
